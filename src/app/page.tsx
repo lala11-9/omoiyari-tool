@@ -40,7 +40,13 @@ export default function Home() {
       tags: tagInput.split(',').map(t => t.trim()).filter(t => t !== ''),
       url,
       memo: '',
-      createdAt: new Date().toLocaleString('ja-JP', { year: 'numeric', month: '12月', day: 'j日', hour: '2-digit', minute: '2-digit' }).replace('j', new Date().getDate().toString()),
+      createdAt: new Intl.DateTimeFormat('ja-JP', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+}).format(new Date()),
     };
     setDocs([newDoc, ...docs]);
     setTitle(''); setTagInput(''); setUrl('');
