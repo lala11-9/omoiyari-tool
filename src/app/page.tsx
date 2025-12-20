@@ -8,27 +8,27 @@ interface Doc {
   type: string;
   tags: string[];
   url: string;
-  memo: string;
+  memo: string; // 一言メモ
   createdAt: string;
 }
 
 export default function Home() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'list'>('table'); // 表示切り替え用
+  const [viewMode, setViewMode] = useState<'table' | 'list'>('table');
   
   const [title, setTitle] = useState('');
-  const [type, setType] = useState('PDF');
   const [tagInput, setTagInput] = useState('');
   const [url, setUrl] = useState('');
+  const [memo, setMemo] = useState(''); // メモ用ステート
 
   useEffect(() => {
-    const saved = localStorage.getItem('team_home_v1');
+    const saved = localStorage.getItem('team_home_final_v1');
     if (saved) setDocs(JSON.parse(saved));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('team_home_v1', JSON.stringify(docs));
+    localStorage.setItem('team_home_final_v1', JSON.stringify(docs));
   }, [docs]);
 
   const handleSave = () => {
@@ -36,90 +36,98 @@ export default function Home() {
     const newDoc: Doc = {
       id: Date.now(),
       title,
-      type,
+      type: '資料',
       tags: tagInput.split(',').map(t => t.trim()).filter(t => t !== ''),
       url,
-      memo: '',
+      memo,
       createdAt: new Intl.DateTimeFormat('ja-JP', {
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit',
       }).format(new Date()),
     };
     setDocs([newDoc, ...docs]);
-    setTitle(''); setTagInput(''); setUrl('');
+    setTitle(''); setTagInput(''); setUrl(''); setMemo('');
   };
 
-  const filteredDocs = docs.filter(d => 
-    d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    d.tags.some(t => t.includes(searchQuery))
-  );
+  // 全文検索ロジック（タイトル、タグ、メモ、URLすべてを対象にする）
+  const filteredDocs = docs.filter(d => {
+    const query = searchQuery.toLowerCase();
+    return (
+      d.title.toLowerCase().includes(query) ||
+      d.memo.toLowerCase().includes(query) ||
+      d.tags.some(t => t.toLowerCase().includes(query)) ||
+      d.url.toLowerCase().includes(query)
+    );
+  });
 
   return (
-    <main style={{ padding: '40px 50px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'Inter, -apple-system, sans-serif', color: '#37352f' }}>
-      {/* タイトルエリア */}
+    <main style={{ padding: '40px 50px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'Inter, sans-serif', color: '#37352f' }}>
       <h1 style={{ fontSize: '2.5rem', fontWeight: '700', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <span style={{ fontSize: '3rem' }}></span> Material Storage
+        <span style={{ fontSize: '3rem' }}>💾</span> security knowledge
       </h1>
 
-      {/* チーム用登録フォーム */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', backgroundColor: '#f7f6f3', padding: '20px', borderRadius: '8px', border: '1px solid #edece9' }}>
-        <input placeholder="資料名" value={title} onChange={e => setTitle(e.target.value)} style={notionInputStyle} />
-        <input placeholder="Tag (カンマ区切り)" value={tagInput} onChange={e => setTagInput(e.target.value)} style={notionInputStyle} />
-        <input placeholder="URL (Google Drive等)" value={url} onChange={e => setUrl(e.target.value)} style={notionInputStyle} />
-        <button onClick={handleSave} style={{ backgroundColor: '#2383e2', color: 'white', border: 'none', borderRadius: '4px', padding: '0 20px', cursor: 'pointer', fontWeight: '600' }}>新規作成</button>
+      {/* 登録フォーム */}
+      <div style={{ backgroundColor: '#f7f6f3', padding: '20px', borderRadius: '8px', border: '1px solid #edece9', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <input placeholder="名前" value={title} onChange={e => setTitle(e.target.value)} style={notionInputStyle} />
+          <input placeholder="タグ (カンマ区切り)" value={tagInput} onChange={e => setTagInput(e.target.value)} style={notionInputStyle} />
+          <input placeholder="URL" value={url} onChange={e => setUrl(e.target.value)} style={notionInputStyle} />
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input placeholder="一言メモ (検索対象になります)" value={memo} onChange={e => setMemo(e.target.value)} style={{ ...notionInputStyle, flex: 1 }} />
+          <button onClick={handleSave} style={{ backgroundColor: '#2383e2', color: 'white', border: 'none', borderRadius: '4px', padding: '0 30px', cursor: 'pointer', fontWeight: '600' }}>追加</button>
+        </div>
       </div>
 
-      {/* ビュー切り替えタブ */}
-      <div style={{ marginBottom: '2px', display: 'flex', gap: '10px', paddingLeft: '5px' }}>
-        <button 
-          onClick={() => setViewMode('table')}
-          style={viewMode === 'table' ? activeTabStyle : inactiveTabStyle}>
-          田 テーブルビュー
-        </button>
-        <button 
-          onClick={() => setViewMode('list')}
-          style={viewMode === 'list' ? activeTabStyle : inactiveTabStyle}>
-          ＝ リストビュー
-        </button>
+      {/* 🔍 全文検索窓 */}
+      <div style={{ marginBottom: '20px' }}>
+        <input 
+          placeholder="🔍 すべての項目から検索..." 
+          value={searchQuery} 
+          onChange={e => setSearchQuery(e.target.value)}
+          style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '16px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}
+        />
       </div>
 
-      {/* メイン表示エリア */}
-      <div style={{ borderTop: '1px solid #eee', paddingTop: '10px' }}>
+      {/* ビュー切り替え */}
+      <div style={{ display: 'flex', gap: '15px', marginBottom: '10px', paddingLeft: '5px' }}>
+        <button onClick={() => setViewMode('table')} style={viewMode === 'table' ? activeTabStyle : inactiveTabStyle}>田 テーブル</button>
+        <button onClick={() => setViewMode('list')} style={viewMode === 'list' ? activeTabStyle : inactiveTabStyle}>＝ リスト</button>
+      </div>
+
+      <div style={{ borderTop: '1px solid #eee' }}>
         {viewMode === 'table' ? (
-          /* --- テーブルビュー --- */
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ color: '#666', textAlign: 'left', fontSize: '12px' }}>
                 <th style={thStyle}>Aa 名前</th>
                 <th style={thStyle}>⋮≡ Tag</th>
+                <th style={thStyle}>📝 一言メモ</th>
                 <th style={thStyle}>🕒 作成日時</th>
               </tr>
             </thead>
             <tbody>
               {filteredDocs.map(doc => (
-                <tr key={doc.id} style={trStyle}>
-                  <td style={tdStyle}>
-                    <span style={{ marginRight: '10px' }}>📄</span>
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#37352f', fontWeight: '500' }}>{doc.title}</a>
-                  </td>
+                <tr key={doc.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={tdStyle}><a href={doc.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>📄 {doc.title}</a></td>
                   <td style={tdStyle}>
                     <div style={{ display: 'flex', gap: '5px' }}>
                       {doc.tags.map((tag, i) => <span key={i} style={tagBadgeStyle(tag)}>{tag}</span>)}
                     </div>
                   </td>
+                  <td style={{ ...tdStyle, color: '#37352f' }}>{doc.memo}</td>
                   <td style={{ ...tdStyle, color: '#666', fontSize: '12px' }}>{doc.createdAt}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          /* --- リストビュー --- */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '10px' }}>
             {filteredDocs.map(doc => (
-              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', padding: '8px', borderRadius: '5px' }}>
-                <span style={{ marginRight: '10px' }}>📄</span>
-                <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#37352f', flex: 1 }}>{doc.title}</a>
-                <div style={{ display: 'flex', gap: '5px' }}>
+              <div key={doc.id} style={{ padding: '10px', borderBottom: '1px solid #f1f1f1' }}>
+                <div style={{ fontWeight: '600' }}><a href={doc.url} target="_blank" rel="noopener noreferrer" style={linkStyle}>📄 {doc.title}</a></div>
+                <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>{doc.memo}</div>
+                <div style={{ display: 'flex', gap: '5px', marginTop: '6px' }}>
                   {doc.tags.map((tag, i) => <span key={i} style={tagBadgeStyle(tag)}>{tag}</span>)}
                 </div>
               </div>
@@ -131,21 +139,15 @@ export default function Home() {
   );
 }
 
-// スタイル定義
-const notionInputStyle = { border: '1px solid #ddd', padding: '10px', borderRadius: '4px', flex: 1, fontSize: '14px', backgroundColor: 'white' };
-const thStyle = { padding: '10px', fontWeight: 'normal' };
-const tdStyle = { padding: '10px', borderBottom: '1px solid #eee' };
-const trStyle = { borderBottom: '1px solid #eee' };
-
-const activeTabStyle = { border: 'none', background: 'none', borderBottom: '2px solid black', padding: '5px 10px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' };
-const inactiveTabStyle = { border: 'none', background: 'none', color: '#666', padding: '5px 10px', cursor: 'pointer', fontSize: '14px' };
-
-const tagBadgeStyle = (tag: string) => {
-  const isWeb = tag.includes('Web');
-  const isNet = tag.includes('ネットワーク');
-  return {
-    backgroundColor: isWeb ? '#d3e5ef' : isNet ? '#ffedeb' : '#eee',
-    color: isWeb ? '#2383e2' : isNet ? '#eb5757' : '#37352f',
-    padding: '2px 8px', borderRadius: '3px', fontSize: '12px', whiteSpace: 'nowrap' as any
-  };
-};
+// スタイルはほぼ同じ（再掲）
+const notionInputStyle = { border: '1px solid #ddd', padding: '10px', borderRadius: '4px', fontSize: '14px' };
+const thStyle = { padding: '12px 10px', fontWeight: 'normal' };
+const tdStyle = { padding: '12px 10px' };
+const linkStyle = { textDecoration: 'none', color: '#37352f' };
+const activeTabStyle = { border: 'none', background: 'none', borderBottom: '2px solid black', padding: '5px', cursor: 'pointer', fontWeight: '600' };
+const inactiveTabStyle = { border: 'none', background: 'none', color: '#666', padding: '5px', cursor: 'pointer' };
+const tagBadgeStyle = (tag: string) => ({
+  backgroundColor: tag.includes('Web') ? '#d3e5ef' : '#eee',
+  color: tag.includes('Web') ? '#2383e2' : '#37352f',
+  padding: '2px 8px', borderRadius: '3px', fontSize: '12px'
+});
