@@ -116,7 +116,7 @@ export default function Home() {
           /* --- リストビュー --- */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredDocs.map(doc => (
-              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', padding: '8px', borderRadius: '5px', hover: { backgroundColor: '#f1f1f1' } }}>
+              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', padding: '8px', borderRadius: '5px' }}>
                 <span style={{ marginRight: '10px' }}>📄</span>
                 <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#37352f', flex: 1 }}>{doc.title}</a>
                 <div style={{ display: 'flex', gap: '5px' }}>
