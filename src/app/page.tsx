@@ -8,6 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// ... (スタイル定義は前回と同じ) ...
 const inputStyle: React.CSSProperties = { padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', width: '100%', boxSizing: 'border-box' };
 const buttonStyle: React.CSSProperties = { backgroundColor: '#2383e2', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
 const cardStyle: React.CSSProperties = { backgroundColor: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' };
@@ -22,7 +23,6 @@ export default function Home() {
   const [docs, setDocs] = useState<any[]>([]);
   const [customTags, setCustomTags] = useState<any[]>([]);
   
-  // 入力用
   const [inputMode, setInputMode] = useState<'書類' | 'ナレッジ'>('書類');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
@@ -31,7 +31,6 @@ export default function Home() {
   const [visibility, setVisibility] = useState('非公開');
   const [newTagName, setNewTagName] = useState('');
   
-  // 表示用
   const [displayTab, setDisplayTab] = useState<'すべて' | '書類' | 'ナレッジ'>('すべて');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -52,20 +51,33 @@ export default function Home() {
     if (t) setCustomTags(t);
   };
 
-  // モード切り替え時にテンプレートをセット
+  // 削除機能の強化版
+  const handleDelete = async (id: string) => {
+    if (!confirm('この資産を完全に削除しますか？')) return;
+
+    // 削除リクエスト
+    const { error } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Delete error:', error);
+      alert('削除に失敗しました: ' + error.message);
+    } else {
+      // 成功したら一覧から消す（再読み込み）
+      alert('削除しました');
+      await fetchData();
+    }
+  };
+
   const toggleMode = (mode: '書類' | 'ナレッジ') => {
     setInputMode(mode);
-    if (mode === 'ナレッジ') {
-      setMemo("【Q】\n\n【A】");
-    } else {
-      setMemo("");
-    }
+    setMemo(mode === 'ナレッジ' ? "【Q】\n\n【A】" : "");
   };
 
   const handleSave = async () => {
     if (!title || !selectedTag) return alert('タイトルとタグは必須です');
-    
-    // 判定用に隠しタグを入れる（より確実な仕分けのため）
     const modeTag = inputMode === '書類' ? 'type:doc' : 'type:knowledge';
     const finalTags = [selectedTag, modeTag];
     if (inputMode === '書類') finalTags.push(visibility);
@@ -73,7 +85,7 @@ export default function Home() {
     const { error } = await supabase.from('documents').insert([{
       title: title,
       tags: finalTags,
-      url: url, // ナレッジモードでもURLがあれば保存
+      url: url,
       memo: memo
     }]);
 
@@ -92,20 +104,14 @@ export default function Home() {
     else { setNewTagName(''); fetchData(); alert('タグを追加しました'); }
   };
 
-  // --- フィルタリングロジック ---
+  // フィルタリング
   const filteredDocs = docs.filter(doc => {
     const isDocType = doc.tags?.includes('type:doc') || (doc.url && !doc.tags?.includes('type:knowledge'));
     const isKnowledgeType = doc.tags?.includes('type:knowledge') || (!doc.url && !doc.tags?.includes('type:doc'));
-
     let matchesTab = true;
     if (displayTab === '書類') matchesTab = isDocType;
     if (displayTab === 'ナレッジ') matchesTab = isKnowledgeType;
-
-    const matchesSearch = 
-      (doc.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (doc.memo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.tags?.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()));
-
+    const matchesSearch = (doc.title || "").toLowerCase().includes(searchQuery.toLowerCase()) || (doc.memo || "").toLowerCase().includes(searchQuery.toLowerCase()) || doc.tags?.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesTab && matchesSearch;
   });
 
@@ -124,7 +130,7 @@ export default function Home() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div>
-            <input placeholder={inputMode === '書類' ? "書類のタイトル" : "ナレッジ・疑問のタイトル"} value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
+            <input placeholder={inputMode === '書類' ? "書類タイトル" : "ナレッジタイトル"} value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <select value={selectedTag} onChange={e => setSelectedTag(e.target.value)} style={inputStyle}>
                 <option value="">タグを選択</option>
@@ -138,8 +144,7 @@ export default function Home() {
                 </select>
               )}
             </div>
-            {/* ナレッジモードでもURLを貼れるように！ */}
-            <input placeholder={inputMode === '書類' ? "ファイルURLを貼り付け" : "参考リンクURL（任意）"} value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginTop: '10px' }} />
+            <input placeholder="URL (任意)" value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginTop: '10px' }} />
             
             <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
               <p style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '5px' }}>🏷️ {inputMode}タグ追加</p>
@@ -178,7 +183,13 @@ export default function Home() {
                       <span key={t} style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>{t}</span>
                     ))}
                   </div>
-                  <button onClick={async () => { if(confirm('削除しますか？')) { await supabase.from('documents').delete().eq('id', doc.id); fetchData(); } }} style={{ border: 'none', background: 'none', color: '#cbd5e1', fontSize: '12px', cursor: 'pointer' }}>削除</button>
+                  {/* ここが削除ボタン */}
+                  <button 
+                    onClick={() => handleDelete(doc.id)} 
+                    style={{ border: 'none', background: 'none', color: '#f87171', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                  >
+                    削除
+                  </button>
                 </div>
                 <h3 style={{ fontSize: '17px', margin: '0 0 10px 0', fontWeight: 'bold' }}>
                   {doc.url ? (
