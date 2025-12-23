@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -8,20 +8,18 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// ... (スタイル定義は前回と同じ) ...
+// --- スタイル ---
 const inputStyle: React.CSSProperties = { padding: '10px', borderRadius: '6px', border: '1px solid #ddd', fontSize: '14px', width: '100%', boxSizing: 'border-box' };
 const buttonStyle: React.CSSProperties = { backgroundColor: '#2383e2', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
 const cardStyle: React.CSSProperties = { backgroundColor: 'white', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' };
-const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: '10px 20px', cursor: 'pointer', borderBottom: active ? '3px solid #2383e2' : '3px solid transparent',
-  color: active ? '#2383e2' : '#64748b', fontWeight: 'bold', transition: '0.2s', backgroundColor: 'transparent', border: 'none'
-});
+const dropZoneStyle: React.CSSProperties = { border: '2px dashed #cbd5e1', padding: '15px', borderRadius: '8px', textAlign: 'center', backgroundColor: '#f8fafc', color: '#64748b', cursor: 'pointer', marginTop: '10px' };
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<any[]>([]);
   const [customTags, setCustomTags] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
   
   const [inputMode, setInputMode] = useState<'書類' | 'ナレッジ'>('書類');
   const [title, setTitle] = useState('');
@@ -51,159 +49,138 @@ export default function Home() {
     if (t) setCustomTags(t);
   };
 
-  // 削除機能の強化版
-  const handleDelete = async (id: string) => {
-    if (!confirm('この資産を完全に削除しますか？')) return;
+  // --- ファイルアップロード処理 ---
+  const handleFileUpload = async (file: File) => {
+    try {
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
 
-    // 削除リクエスト
-    const { error } = await supabase
-      .from('documents')
-      .delete()
-      .eq('id', id);
+      const { error: uploadError } = await supabase.storage
+        .from('files')
+        .upload(filePath, file);
 
-    if (error) {
-      console.error('Delete error:', error);
-      alert('削除に失敗しました: ' + error.message);
-    } else {
-      // 成功したら一覧から消す（再読み込み）
-      alert('削除しました');
-      await fetchData();
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('files').getPublicUrl(filePath);
+      setUrl(data.publicUrl); // URL入力欄に自動セット
+      if (!title) setTitle(file.name); // タイトルが空ならファイル名を入れる
+      alert('ファイルをアップロードしました！');
+    } catch (error: any) {
+      alert('アップロード失敗: ' + error.message);
+    } finally {
+      setUploading(false);
     }
   };
 
-  const toggleMode = (mode: '書類' | 'ナレッジ') => {
-    setInputMode(mode);
-    setMemo(mode === 'ナレッジ' ? "【Q】\n\n【A】" : "");
+  // --- 削除処理 (エラー対策済み) ---
+  const handleDelete = async (doc: any) => {
+    if (!confirm('本当に削除しますか？')) return;
+    
+    // SupabaseのIDは大文字の「ID」か、小文字の「id」か確認
+    const idKey = doc.id ? 'id' : 'ID';
+    const { error } = await supabase.from('documents').delete().eq(idKey, doc[idKey]);
+
+    if (error) {
+      alert('削除失敗: ' + error.message);
+    } else {
+      alert('削除しました');
+      fetchData();
+    }
   };
 
   const handleSave = async () => {
     if (!title || !selectedTag) return alert('タイトルとタグは必須です');
     const modeTag = inputMode === '書類' ? 'type:doc' : 'type:knowledge';
-    const finalTags = [selectedTag, modeTag];
-    if (inputMode === '書類') finalTags.push(visibility);
-
     const { error } = await supabase.from('documents').insert([{
-      title: title,
-      tags: finalTags,
-      url: url,
-      memo: memo
+      title,
+      tags: [selectedTag, modeTag, ...(inputMode === '書類' ? [visibility] : [])],
+      url,
+      memo
     }]);
 
     if (!error) {
       alert('保存しました！');
-      setTitle(''); setUrl(''); setMemo(inputMode === 'ナレッジ' ? "【Q】\n\n【A】" : ""); setSelectedTag(''); fetchData();
+      setTitle(''); setUrl(''); setMemo(inputMode === 'ナレッジ' ? "【Q】\n\n【A】" : ""); fetchData();
     } else {
-      alert('保存エラー: ' + error.message);
+      alert('保存失敗: ' + error.message);
     }
   };
 
-  const handleAddTag = async () => {
-    if (!newTagName) return;
-    const { error } = await supabase.from('custom_tags').insert([{ name: newTagName, type: inputMode }]);
-    if (error) alert('タグ追加失敗: ' + error.message);
-    else { setNewTagName(''); fetchData(); alert('タグを追加しました'); }
-  };
-
-  // フィルタリング
-  const filteredDocs = docs.filter(doc => {
-    const isDocType = doc.tags?.includes('type:doc') || (doc.url && !doc.tags?.includes('type:knowledge'));
-    const isKnowledgeType = doc.tags?.includes('type:knowledge') || (!doc.url && !doc.tags?.includes('type:doc'));
-    let matchesTab = true;
-    if (displayTab === '書類') matchesTab = isDocType;
-    if (displayTab === 'ナレッジ') matchesTab = isKnowledgeType;
-    const matchesSearch = (doc.title || "").toLowerCase().includes(searchQuery.toLowerCase()) || (doc.memo || "").toLowerCase().includes(searchQuery.toLowerCase()) || doc.tags?.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesTab && matchesSearch;
-  });
-
   if (loading) return <div style={{ padding: '50px', textAlign: 'center' }}>読み込み中...</div>;
-  if (!user) return <div style={{ padding: '50px', textAlign: 'center' }}>ログインが必要です</div>;
 
   return (
-    <main style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#f8fafc' }}>
+    <main style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto', fontFamily: 'sans-serif' }}>
       
-      {/* 入力エリア */}
-      <section style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
+      <section style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-          <button onClick={() => toggleMode('書類')} style={{ ...buttonStyle, backgroundColor: inputMode === '書類' ? '#2383e2' : '#f1f5f9', color: inputMode === '書類' ? 'white' : '#64748b', flex: 1 }}>📄 書類モード</button>
-          <button onClick={() => toggleMode('ナレッジ')} style={{ ...buttonStyle, backgroundColor: inputMode === 'ナレッジ' ? '#2383e2' : '#f1f5f9', color: inputMode === 'ナレッジ' ? 'white' : '#64748b', flex: 1 }}>💡 ナレッジモード</button>
+          <button onClick={() => { setInputMode('書類'); setMemo(''); }} style={{ ...buttonStyle, backgroundColor: inputMode === '書類' ? '#2383e2' : '#f1f5f9', color: inputMode === '書類' ? 'white' : '#64748b', flex: 1 }}>📄 書類モード</button>
+          <button onClick={() => { setInputMode('ナレッジ'); setMemo("【Q】\n\n【A】"); }} style={{ ...buttonStyle, backgroundColor: inputMode === 'ナレッジ' ? '#2383e2' : '#f1f5f9', color: inputMode === 'ナレッジ' ? 'white' : '#64748b', flex: 1 }}>💡 ナレッジモード</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div>
-            <input placeholder={inputMode === '書類' ? "書類タイトル" : "ナレッジタイトル"} value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
+            <input placeholder="タイトル" value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
+            
+            {/* ドラッグ＆ドロップ風エリア */}
+            <div 
+              style={dropZoneStyle}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file) handleFileUpload(file);
+              }}
+              onClick={() => document.getElementById('fileInput')?.click()}
+            >
+              {uploading ? 'アップロード中...' : '📎 PDF等をドロップ または クリックで追加'}
+              <input id="fileInput" type="file" hidden onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} />
+            </div>
+
+            <input placeholder="URL (アップロードすると自動入力)" value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginTop: '10px' }} />
+            
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <select value={selectedTag} onChange={e => setSelectedTag(e.target.value)} style={inputStyle}>
                 <option value="">タグを選択</option>
                 {customTags.filter(t => t.type === inputMode || !t.type).map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
               </select>
-              {inputMode === '書類' && (
-                <select value={visibility} onChange={e => setVisibility(e.target.value)} style={inputStyle}>
-                  <option value="一般公開">🌍 一般</option>
-                  <option value="限定公開">👥 限定</option>
-                  <option value="非公開">🔒 非公開</option>
-                </select>
-              )}
-            </div>
-            <input placeholder="URL (任意)" value={url} onChange={e => setUrl(e.target.value)} style={{ ...inputStyle, marginTop: '10px' }} />
-            
-            <div style={{ marginTop: '20px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-              <p style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginBottom: '5px' }}>🏷️ {inputMode}タグ追加</p>
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <input value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="新タグ" style={{ ...inputStyle, backgroundColor: 'white' }} />
-                <button onClick={handleAddTag} style={{ ...buttonStyle, backgroundColor: '#64748b', fontSize: '12px' }}>追加</button>
-              </div>
             </div>
           </div>
           <div>
-            <textarea placeholder="内容を入力" value={memo} onChange={e => setMemo(e.target.value)} style={{ ...inputStyle, height: '185px', resize: 'none' }} />
-            <button onClick={handleSave} style={{ ...buttonStyle, width: '100%', marginTop: '10px', height: '40px' }}>保存する</button>
+            <textarea placeholder="内容..." value={memo} onChange={e => setMemo(e.target.value)} style={{ ...inputStyle, height: '150px', resize: 'none' }} />
+            <button onClick={handleSave} style={{ ...buttonStyle, width: '100%', marginTop: '10px' }}>資産を保存</button>
           </div>
         </div>
       </section>
 
-      {/* 表示エリア */}
-      <section style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+      {/* 一覧エリア（削除ボタン付き） */}
+      <section>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <div style={{ display: 'flex' }}>
-            <button onClick={() => setDisplayTab('すべて')} style={tabStyle(displayTab === 'すべて')}>すべて</button>
-            <button onClick={() => setDisplayTab('書類')} style={tabStyle(displayTab === '書類')}>📄 書類</button>
-            <button onClick={() => setDisplayTab('ナレッジ')} style={tabStyle(displayTab === 'ナレッジ')}>💡 ナレッジ</button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {['すべて', '書類', 'ナレッジ'].map((t: any) => (
+              <button key={t} onClick={() => setDisplayTab(t)} style={{ padding: '8px 15px', cursor: 'pointer', border: 'none', borderBottom: displayTab === t ? '2px solid #2383e2' : 'none', background: 'none' }}>{t}</button>
+            ))}
           </div>
           <input placeholder="🔍 検索..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ ...inputStyle, width: '200px' }} />
         </div>
 
         <div style={{ display: 'grid', gap: '15px' }}>
-          {filteredDocs.map(doc => {
-            const isDoc = doc.tags?.includes('type:doc');
-            return (
-              <div key={doc.id} style={cardStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
-                    {doc.tags?.filter((t:string) => !t.startsWith('type:')).map((t: string) => (
-                      <span key={t} style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>{t}</span>
-                    ))}
-                  </div>
-                  {/* ここが削除ボタン */}
-                  <button 
-                    onClick={() => handleDelete(doc.id)} 
-                    style={{ border: 'none', background: 'none', color: '#f87171', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
-                  >
-                    削除
-                  </button>
-                </div>
-                <h3 style={{ fontSize: '17px', margin: '0 0 10px 0', fontWeight: 'bold' }}>
-                  {doc.url ? (
-                    <a href={doc.url} target="_blank" style={{ color: '#2383e2', textDecoration: 'none' }}>
-                      {isDoc ? '📄' : '💡'} {doc.title}
-                    </a>
-                  ) : (
-                    <>{isDoc ? '📄' : '💡'} {doc.title}</>
-                  )}
-                </h3>
-                <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px' }}>{doc.memo}</div>
+          {docs.filter(doc => {
+            const isDoc = doc.tags?.includes('type:doc') || doc.url;
+            if (displayTab === '書類' && !isDoc) return false;
+            if (displayTab === 'ナレッジ' && isDoc) return false;
+            return doc.title.includes(searchQuery) || doc.memo.includes(searchQuery);
+          }).map(doc => (
+            <div key={doc.id || doc.ID} style={cardStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12px', color: '#2383e2' }}>{doc.tags?.[0]}</span>
+                <button onClick={() => handleDelete(doc)} style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }}>削除</button>
               </div>
-            );
-          })}
+              <h3>{doc.url ? <a href={doc.url} target="_blank">{doc.title}</a> : doc.title}</h3>
+              <p style={{ whiteSpace: 'pre-wrap', fontSize: '14px' }}>{doc.memo}</p>
+            </div>
+          ))}
         </div>
       </section>
     </main>
